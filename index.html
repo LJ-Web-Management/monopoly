@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monopoly</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="setup-screen">
+      <div class="setup-card">
+        <h1>🎩 MONOPOLY</h1>
+        <p class="subtitle">Play with friends by passing the device, or add bots to fill the table.</p>
+        <div id="setup-players"></div>
+        <button id="add-player-btn" class="btn">+ Add Player</button>
+        <label class="fp-toggle"><input type="checkbox" id="free-parking-toggle" /> House rule: Free Parking collects tax/fine cash</label>
+        <button id="start-game-btn" class="btn primary big">Start Game</button>
+      </div>
+    </div>
+
+    <div id="game-screen" class="hidden">
+      <div id="board-wrap">
+        <div id="board"></div>
+      </div>
+      <div id="sidebar">
+        <div id="turn-banner"></div>
+        <div id="players-panel"></div>
+        <div id="free-parking-pot"></div>
+        <div id="actions-panel"></div>
+      </div>
+    </div>
+
+    <div id="modal-overlay" class="hidden">
+      <div id="modal-box"></div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="engine.js"></script>
+  <script src="bots.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
