@@ -13,6 +13,39 @@ const el = (tag, cls, html) => {
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const money = (n) => `$${n.toLocaleString()}`;
 
+// Retrigger a CSS animation on an element by toggling a class with a forced reflow
+function pop(elm, cls = 'pop') {
+  if (!elm) return;
+  elm.classList.remove(cls);
+  void elm.offsetWidth;
+  elm.classList.add(cls);
+}
+
+function flashSpace(pos) {
+  const refs = spaceEls[pos];
+  if (!refs) return;
+  refs.cell.classList.remove('landing-flash');
+  void refs.cell.offsetWidth;
+  refs.cell.classList.add('landing-flash');
+}
+
+const CONFETTI_EMOJI = ['🎉', '🎊', '💵', '🏠', '⭐', '🎩'];
+function spawnConfetti() {
+  const layer = el('div', '');
+  layer.id = 'confetti-layer';
+  document.body.appendChild(layer);
+  const count = 80;
+  for (let i = 0; i < count; i++) {
+    const piece = el('div', 'confetti-piece', CONFETTI_EMOJI[Math.floor(Math.random() * CONFETTI_EMOJI.length)]);
+    piece.style.left = `${Math.random() * 100}vw`;
+    piece.style.fontSize = `${1 + Math.random() * 1.4}rem`;
+    piece.style.animationDuration = `${2.5 + Math.random() * 2.5}s`;
+    piece.style.animationDelay = `${Math.random() * 1.5}s`;
+    layer.appendChild(piece);
+  }
+  setTimeout(() => layer.remove(), 6500);
+}
+
 // ---------------- Setup screen ----------------
 let setupPlayers = [];
 
@@ -175,19 +208,24 @@ function renderLog() {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+const prevMoney = {};
 function renderPlayersPanel() {
   const panel = $('#players-panel');
   panel.innerHTML = '';
   game.players.forEach((p) => {
+    const color = PLAYER_COLORS[p.id % PLAYER_COLORS.length];
     const card = el('div', `player-card ${p.bankrupt ? 'bankrupt' : ''} ${game.currentPlayer().id === p.id ? 'active' : ''}`);
-    card.style.borderColor = PLAYER_COLORS[p.id % PLAYER_COLORS.length];
+    card.style.setProperty('--pc-color', color);
     const propCount = p.properties.length;
+    const prev = prevMoney[p.id];
+    const moneyCls = prev !== undefined && p.money > prev ? 'money-up' : prev !== undefined && p.money < prev ? 'money-down' : '';
+    prevMoney[p.id] = p.money;
     card.innerHTML = `
       <div class="pc-head">
-        <span class="pc-token" style="background:${PLAYER_COLORS[p.id % PLAYER_COLORS.length]}">${p.token}</span>
+        <span class="pc-token" style="background:${color}">${p.token}</span>
         <span class="pc-name">${p.name}${p.isBot ? ' 🤖' : ''}</span>
       </div>
-      <div class="pc-money">${p.bankrupt ? 'BANKRUPT' : money(p.money)}</div>
+      <div class="pc-money ${moneyCls}">${p.bankrupt ? '💀 BANKRUPT' : money(p.money)}</div>
       <div class="pc-meta">${propCount} propert${propCount === 1 ? 'y' : 'ies'}${p.inJail ? ' · 🔒 In Jail' : ''}${p.jailCards > 0 ? ' · 🎫x' + p.jailCards : ''}</div>
     `;
     panel.appendChild(card);
@@ -206,18 +244,22 @@ function updateUI() {
 }
 
 function renderTurnBanner(text) {
-  $('#turn-banner').innerHTML = text;
+  const banner = $('#turn-banner');
+  banner.innerHTML = text;
+  pop(banner);
 }
 
 // ---------------- Actions panel (turn-flow prompts) ----------------
 function renderActionsPanel(config) {
   const panel = $('#actions-panel');
   panel.innerHTML = '';
+  pop(panel);
   const { mode, player } = config;
 
   if (mode === 'passdevice') {
     renderTurnBanner(`📱 Pass the device to <b>${player.name}</b>`);
-    panel.appendChild(el('div', 'prompt-title', `${player.token} ${player.name}, it's your turn!`));
+    panel.appendChild(el('div', 'pass-token-bounce', player.token));
+    panel.appendChild(el('div', 'prompt-title', `${player.name}, it's your turn!`));
     const btn = el('button', 'btn primary big', "I'm ready — Go!");
     btn.onclick = config.onReady;
     panel.appendChild(btn);
@@ -228,15 +270,22 @@ function renderActionsPanel(config) {
     renderTurnBanner(`🎲 ${player.name}'s turn`);
     panel.appendChild(el('div', 'prompt-title', 'Ready to roll the dice'));
     const btn = el('button', 'btn primary big', 'Roll Dice 🎲');
-    btn.onclick = config.onRoll;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      panel.innerHTML = '';
+      panel.appendChild(el('div', 'prompt-title', `${player.name} is rolling...`));
+      panel.appendChild(el('div', 'dice-display', `<span class="die spinning">🎲</span><span class="die spinning">🎲</span>`));
+      await delay(650);
+      config.onRoll();
+    };
     panel.appendChild(btn);
     return;
   }
 
   if (mode === 'dice-result') {
     renderTurnBanner(`🎲 ${player.name} rolled`);
-    panel.appendChild(el('div', 'dice-display', `<span class="die">${diceFace(config.d1)}</span><span class="die">${diceFace(config.d2)}</span>`));
-    panel.appendChild(el('div', 'prompt-title', `Total: ${config.d1 + config.d2}${config.d1 === config.d2 ? ' — Doubles!' : ''}`));
+    panel.appendChild(el('div', 'dice-display', `<span class="die rolled">${diceFace(config.d1)}</span><span class="die rolled">${diceFace(config.d2)}</span>`));
+    panel.appendChild(el('div', 'prompt-title', `Total: ${config.d1 + config.d2}${config.d1 === config.d2 ? ' — Doubles! 🎉' : ''}`));
     return;
   }
 
@@ -322,6 +371,7 @@ function renderActionsPanel(config) {
 
   if (mode === 'info') {
     renderTurnBanner(config.banner || '');
+    if (config.emoji) panel.appendChild(el('div', 'info-token', config.emoji));
     panel.appendChild(el('div', 'prompt-title', config.text || ''));
     return;
   }
@@ -373,7 +423,7 @@ async function takeTurn() {
 
 function passDeviceGate(player) {
   if (player.isBot) {
-    renderActionsPanel({ mode: 'info', player, banner: `🤖 ${player.name}'s turn`, text: `${player.name} is thinking...` });
+    renderActionsPanel({ mode: 'info', player, banner: `🤖 ${player.name}'s turn`, text: `${player.name} is thinking...`, emoji: '🤖' });
     return delay(500);
   }
   return new Promise((resolve) => {
@@ -469,7 +519,8 @@ async function handleRollPhase(player) {
 
 function requestRoll(player) {
   if (player.isBot) {
-    return delay(500).then(() => game.rollDice());
+    renderActionsPanel({ mode: 'info', player, banner: `🎲 ${player.name}'s turn`, text: `${player.name} is rolling...`, emoji: '🎲' });
+    return delay(650).then(() => game.rollDice());
   }
   return new Promise((resolve) => {
     renderActionsPanel({ mode: 'roll', player, onRoll: () => resolve(game.rollDice()) });
@@ -477,17 +528,26 @@ function requestRoll(player) {
 }
 
 async function movePlayerAndResolve(player, steps) {
-  const old = player.pos;
-  const newPos = (old + steps) % 40;
-  if (old + steps >= 40) {
-    player.money += GO_SALARY;
-    game.addLog(`${player.name} passes GO and collects $${GO_SALARY}`);
-  }
-  player.pos = newPos;
-  game.addLog(`${player.name} moves to ${BOARD[newPos].name}`);
+  await animateHop(player, steps);
+  game.addLog(`${player.name} moves to ${BOARD[player.pos].name}`);
+  flashSpace(player.pos);
   updateUI();
-  await delay(300);
-  await resolveLanding(player, newPos, steps);
+  await delay(250);
+  await resolveLanding(player, player.pos, steps);
+}
+
+// Hop the token forward one space at a time so movement is visible on the board
+async function animateHop(player, steps) {
+  const hopDelay = steps > 8 ? 90 : 130;
+  for (let i = 0; i < steps; i++) {
+    player.pos = (player.pos + 1) % 40;
+    if (player.pos === 0) {
+      player.money += GO_SALARY;
+      game.addLog(`${player.name} passes GO and collects $${GO_SALARY}`);
+    }
+    updateUI();
+    await delay(hopDelay);
+  }
 }
 
 async function advanceToPosition(player, pos, grantPassGo = true) {
@@ -498,6 +558,7 @@ async function advanceToPosition(player, pos, grantPassGo = true) {
   }
   player.pos = pos;
   game.addLog(`${player.name} advances to ${BOARD[pos].name}`);
+  flashSpace(pos);
   updateUI();
   await delay(300);
   await resolveLanding(player, pos, null, { fromCard: true });
@@ -1056,11 +1117,12 @@ async function proposeTrade(player, partner, myOffer, theirOffer) {
 
 // ---------------- Win screen ----------------
 function showWinScreen() {
+  spawnConfetti();
   const box = el('div', 'modal-content win-screen');
   box.innerHTML = `
     <h1>🏆 ${game.winner ? game.winner.name : 'Nobody'} wins!</h1>
     <p>Thanks for playing Monopoly.</p>
-    <div class="modal-actions"><button class="btn primary" id="win-restart">Play Again</button></div>
+    <div class="modal-actions"><button class="btn primary big" id="win-restart">Play Again</button></div>
   `;
   box.querySelector('#win-restart').onclick = () => location.reload();
   openModal(box);
