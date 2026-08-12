@@ -127,6 +127,21 @@ function gridPos(i) {
   return { row: 1 + (i - 30), col: 11 };
 }
 
+// Percentage coordinates (of the 11x11 board) for the center of a space
+function cellCenterPercent(pos) {
+  const { row, col } = gridPos(pos);
+  const cellPct = 100 / 11;
+  return { leftPct: (col - 1) * cellPct + cellPct / 2, topPct: (row - 1) * cellPct + cellPct / 2 };
+}
+
+// Small spread pattern so tokens sharing a space don't fully overlap
+const TOKEN_OFFSETS = [
+  [0, 0], [-2.4, -2.4], [2.4, -2.4], [-2.4, 2.4], [2.4, 2.4], [0, -3.4], [0, 3.4], [-3.4, 0],
+];
+
+let tokenEls = {};
+let renderedLogCount = 0;
+
 function buildBoardDOM() {
   const board = $('#board');
   board.innerHTML = '';
@@ -149,12 +164,10 @@ function buildBoardDOM() {
     if (sp.type === 'tax') cell.appendChild(el('div', 'space-price', money(sp.amount)));
     const buildingsEl = el('div', 'buildings');
     cell.appendChild(buildingsEl);
-    const tokensEl = el('div', 'tokens');
-    cell.appendChild(tokensEl);
     const ownerBar = el('div', 'owner-bar');
     cell.appendChild(ownerBar);
     board.appendChild(cell);
-    spaceEls[sp.i] = { cell, buildingsEl, tokensEl, ownerBar };
+    spaceEls[sp.i] = { cell, buildingsEl, ownerBar };
   });
   // center content
   const center = el('div', 'board-center');
@@ -163,6 +176,12 @@ function buildBoardDOM() {
     <div id="game-log"></div>
   `;
   board.appendChild(center);
+  // floating overlay tokens glide across this layer instead of being torn down per-cell
+  const tokenLayer = el('div', '');
+  tokenLayer.id = 'token-layer';
+  board.appendChild(tokenLayer);
+  tokenEls = {};
+  renderedLogCount = 0;
 }
 
 function renderBoardState() {
@@ -170,9 +189,8 @@ function renderBoardState() {
     const refs = spaceEls[sp.i];
     if (!refs) return;
     refs.buildingsEl.innerHTML = '';
-    refs.tokensEl.innerHTML = '';
-    refs.ownerBar.style.background = 'transparent';
     const st = game.state[sp.i];
+    refs.ownerBar.style.background = 'transparent';
     if (st) {
       if (st.owner !== null) {
         refs.ownerBar.style.background = PLAYER_COLORS[st.owner % PLAYER_COLORS.length];
@@ -185,27 +203,50 @@ function renderBoardState() {
           for (let h = 0; h < st.houses; h++) refs.buildingsEl.appendChild(el('div', 'house', '🏠'));
         }
       }
-      if (st.mortgaged) refs.cellMortgaged = true;
     }
   });
+  renderTokens();
+}
+
+function renderTokens() {
+  const layer = $('#token-layer');
+  if (!layer) return;
+  const grouped = {};
   game.players.forEach((p) => {
     if (p.bankrupt) return;
-    const refs = spaceEls[p.pos];
-    if (!refs) return;
-    const t = el('div', 'token', p.token);
-    t.style.borderColor = PLAYER_COLORS[p.id % PLAYER_COLORS.length];
-    if (p.id === game.currentPlayer().id) t.classList.add('current');
-    refs.tokensEl.appendChild(t);
+    (grouped[p.pos] = grouped[p.pos] || []).push(p);
+  });
+  Object.values(grouped).forEach((list) => list.sort((a, b) => a.id - b.id));
+
+  game.players.forEach((p) => {
+    let t = tokenEls[p.id];
+    if (!t) {
+      t = el('div', 'token token-abs', p.token);
+      t.style.borderColor = PLAYER_COLORS[p.id % PLAYER_COLORS.length];
+      layer.appendChild(t);
+      tokenEls[p.id] = t;
+    }
+    if (p.bankrupt) {
+      t.style.display = 'none';
+      return;
+    }
+    t.style.display = 'flex';
+    const group = grouped[p.pos] || [p];
+    const offset = TOKEN_OFFSETS[group.indexOf(p) % TOKEN_OFFSETS.length];
+    const { leftPct, topPct } = cellCenterPercent(p.pos);
+    t.style.left = `${leftPct + offset[0]}%`;
+    t.style.top = `${topPct + offset[1]}%`;
+    t.classList.toggle('current', game.currentPlayer().id === p.id);
   });
 }
 
 function renderLog() {
   const logEl = $('#game-log');
   if (!logEl) return;
-  logEl.innerHTML = game.log
-    .slice(-40)
-    .map((l) => `<div class="log-line">${l}</div>`)
-    .join('');
+  const newLines = game.log.slice(renderedLogCount);
+  newLines.forEach((l) => logEl.appendChild(el('div', 'log-line', l)));
+  renderedLogCount = game.log.length;
+  while (logEl.children.length > 60) logEl.removeChild(logEl.firstChild);
   logEl.scrollTop = logEl.scrollHeight;
 }
 
