@@ -108,6 +108,7 @@ function startGame() {
   $('#setup-screen').classList.add('hidden');
   $('#game-screen').classList.remove('hidden');
   buildBoardDOM();
+  $('#properties-overview-btn').onclick = openPropertiesOverviewModal;
   updateUI();
   runGameLoop();
 }
@@ -975,6 +976,47 @@ function openMortgageModal(player) {
     box.querySelector('#mort-close').onclick = closeModal;
   };
   render();
+  openModal(box);
+}
+
+// ---------------- All-properties overview (owner-colored, like the classic asset summary screen) ----------------
+function openPropertiesOverviewModal() {
+  const box = el('div', 'modal-content properties-overview');
+  const groups = [];
+  const seen = new Map();
+  BOARD.forEach((sp) => {
+    if (sp.type === 'property') {
+      if (!seen.has(sp.color)) {
+        seen.set(sp.color, { color: sp.color, spaces: [] });
+        groups.push(seen.get(sp.color));
+      }
+      seen.get(sp.color).spaces.push(sp);
+    }
+  });
+  const railroads = BOARD.filter((sp) => sp.type === 'railroad');
+  const utilities = BOARD.filter((sp) => sp.type === 'utility');
+
+  const ownerTag = (spaceIndex) => {
+    const st = game.state[spaceIndex];
+    if (st.owner === null) return `<span class="owner-tag bank">🏦 Bank</span>`;
+    const owner = game.players[st.owner];
+    const color = PLAYER_COLORS[owner.id % PLAYER_COLORS.length];
+    const buildings = BOARD[spaceIndex].type === 'property' && st.houses > 0 ? (st.houses === 5 ? ' 🏨' : ' ' + '🏠'.repeat(st.houses)) : '';
+    return `<span class="owner-tag" style="background:${color}">${owner.token} ${owner.name}${st.mortgaged ? ' 🔒' : ''}${buildings}</span>`;
+  };
+
+  const rowsFor = (spaces) =>
+    spaces.map((sp) => `<div class="prop-overview-row"><span class="pov-name">${sp.name}</span>${ownerTag(sp.i)}</div>`).join('');
+
+  let html = `<h2>📋 All Properties</h2><div class="prop-overview-scroll">`;
+  groups.forEach((g) => {
+    html += `<div class="prop-overview-group"><div class="color-chip" style="background:${g.color}"></div>${rowsFor(g.spaces)}</div>`;
+  });
+  html += `<div class="prop-overview-group"><div class="pov-group-label">🚂 Railroads</div>${rowsFor(railroads)}</div>`;
+  html += `<div class="prop-overview-group"><div class="pov-group-label">💡 Utilities</div>${rowsFor(utilities)}</div>`;
+  html += `</div><div class="modal-actions"><button class="btn primary" id="pov-close">Close</button></div>`;
+  box.innerHTML = html;
+  box.querySelector('#pov-close').onclick = closeModal;
   openModal(box);
 }
 
